@@ -56,28 +56,20 @@ void coeffscalc(int32_t *coeffs, float filterfreq, int32_t samplerate, float Q)
 	coeffs[4] = FloatToFixed(b2);
 }
 
-int32_t IIR(int32_t* coeffs, int32_t *buffer, int16_t sample)
+int32_t IIR(int32_t* coeffs, int32_t *buffer, int16_t sample, int64_t err)
 {
 	// 0000 0000 0000 0000 . 000,0 0000 0000 0000 . 0000 0000 0000 0000 . 0000 0000 0000 0000
-	int64_t acc = 0;
-	int64_t acc1 = 0;
-	int64_t a0, a1, a2, b1, b2;
+	int64_t acc = err;
 	buffer[0] = buffer[1];
 	buffer[1] = buffer[2];
 	buffer[2] = (int32_t)sample;
 	buffer[3] = buffer[4];
 	buffer[4] = buffer[5];
 
-	a0 = (int64_t)buffer[2] * coeffs[0];
-	a1 = (int64_t)buffer[1] * coeffs[1];
-	a2 = (int64_t)buffer[0] * coeffs[2];
-	b1 = (int64_t)buffer[4] * coeffs[3];
-	b2 = (int64_t)buffer[3] * coeffs[4];
 
-	acc = a0 + a1 + a2;
-	acc1 = b1 + b2;
-	acc = acc - acc1;
-	buffer[5] = (int32_t)(acc >> 30);
+	err = (int64_t)buffer[2] * coeffs[0] + (int64_t)buffer[1] * coeffs[1] + (int64_t)buffer[0] * coeffs[2] - (int64_t)buffer[4] * coeffs[3] - (int64_t)buffer[3] * coeffs[4];
+	buffer[5] = (int32_t)(err >> 30);
+	err &= (int64_t)0x000000003fffffff;
 	return buffer[5];
 }
 
@@ -142,7 +134,7 @@ int main(int argc, char* argv[])
 	float end_freq = 20000;
 	float amplitude = 0.5;
 	int32_t samplerate = 48000;
-	float Fc = 500;
+	float Fc = 200;
 	float Q = 0.707;
 	int32_t lenght = 0;
 	int16_t signal;
@@ -168,6 +160,8 @@ int main(int argc, char* argv[])
 
 	coeffscalc(coeffs, Fc, samplerate, Q);
 
+	int64_t acc = 0;
+
 	int16_t buffer[BUFF_LEN * 2];
 
 	int16_t out;
@@ -180,9 +174,9 @@ int main(int argc, char* argv[])
 			
 			signal = sweep_signal(samplerate, freq, end_freq, amplitude, lenght, t);
 
-			out = IIR(coeffs, sample_buffer, signal);
+			out = IIR(coeffs, sample_buffer, signal, acc);
 
-			buffer[j * 2] = out;
+			buffer[j * 2] = (int16_t)out;
 			buffer[j * 2 + 1] = signal;
 
 			n = j;
