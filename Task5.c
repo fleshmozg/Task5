@@ -24,16 +24,15 @@ int32_t FloatToFixed(double x)
 		return FIXED_MIN;
 
 	double base = (double)BASE;
-	int32_t res = x * base;
+	int32_t res = (int32_t)(x * base);
 
 	return res;
 }
 
-void coeffscalc(int32_t *coeffs, float filterfreq, int32_t samplerate, float Q, float gain)
+void coeffscalc(int32_t *coeffs, float filterfreq, int32_t samplerate, float Q)
 {
 	double a0, a1, a2, b1, b2, norm;
 
-	double V = pow(10, abs(gain) / 20);
 	double K = tan(M_PI * filterfreq / samplerate);
 	double K2 = K * K;
 
@@ -44,6 +43,12 @@ void coeffscalc(int32_t *coeffs, float filterfreq, int32_t samplerate, float Q, 
 	b1 = 2 * (K2 - 1) * norm;
 	b2 = (1 - K / Q + K2) * norm;
 
+	//coeffs[0] = a0;
+	//coeffs[1] = a1;
+	//coeffs[2] = a2;
+	//coeffs[3] = b1;
+	//coeffs[4] = b2;
+
 	coeffs[0] = FloatToFixed(a0);
 	coeffs[1] = FloatToFixed(a1);
 	coeffs[2] = FloatToFixed(a2);
@@ -51,16 +56,28 @@ void coeffscalc(int32_t *coeffs, float filterfreq, int32_t samplerate, float Q, 
 	coeffs[4] = FloatToFixed(b2);
 }
 
-int32_t IIR(int32_t* coeffs, int32_t *buffer, int32_t sample)
+int32_t IIR(int32_t* coeffs, int32_t *buffer, int16_t sample)
 {
+	// 0000 0000 0000 0000 . 000,0 0000 0000 0000 . 0000 0000 0000 0000 . 0000 0000 0000 0000
 	int64_t acc = 0;
+	int64_t acc1 = 0;
+	int64_t a0, a1, a2, b1, b2;
 	buffer[0] = buffer[1];
 	buffer[1] = buffer[2];
 	buffer[2] = (int32_t)sample;
 	buffer[3] = buffer[4];
 	buffer[4] = buffer[5];
-	acc = buffer[2] * coeffs[0] + buffer[1] * coeffs[1] + buffer[0] * coeffs[2] - buffer[4] * coeffs[3] - buffer[3] * coeffs[4];
-	buffer[5] = (int32_t)(acc >> 15);
+
+	a0 = (int64_t)buffer[2] * coeffs[0];
+	a1 = (int64_t)buffer[1] * coeffs[1];
+	a2 = (int64_t)buffer[0] * coeffs[2];
+	b1 = (int64_t)buffer[4] * coeffs[3];
+	b2 = (int64_t)buffer[3] * coeffs[4];
+
+	acc = a0 + a1 + a2;
+	acc1 = b1 + b2;
+	acc = acc - acc1;
+	buffer[5] = (int32_t)(acc >> 30);
 	return buffer[5];
 }
 
@@ -78,7 +95,7 @@ int16_t sweep_signal(int32_t samplerate, float start_freq, float end_freq, float
 	n = (float)t / lenght;
 	tmp2 = exp(n * tmp1) - 1.0;
 	signal = FloatToFixed(amplitude * sin(w1 * lenght * tmp2 / (samplerate * tmp1)));
-	return signal >> 15;
+	return (int16_t)(signal >> 15);
 }
 
 //HEADER
@@ -123,8 +140,10 @@ int main(int argc, char* argv[])
 	float time = 1;
 	float freq = 20;
 	float end_freq = 20000;
-	float amplitude = 1;
+	float amplitude = 0.5;
 	int32_t samplerate = 48000;
+	float Fc = 500;
+	float Q = 0.707;
 	int32_t lenght = 0;
 	int16_t signal;
 	int8_t type;
@@ -147,11 +166,11 @@ int main(int argc, char* argv[])
 
 	int32_t coeffs[5] = {0, 0, 0, 0, 0};
 
-	coeffscalc(coeffs, 500, samplerate, 0.707, 0.5);
+	coeffscalc(coeffs, Fc, samplerate, Q);
 
 	int16_t buffer[BUFF_LEN * 2];
 
-	int32_t out;
+	int16_t out;
 
 	int n;
 	for (int t = 0; t < lenght;)
@@ -163,7 +182,7 @@ int main(int argc, char* argv[])
 
 			out = IIR(coeffs, sample_buffer, signal);
 
-			buffer[j * 2] = (int16_t)(out);
+			buffer[j * 2] = out;
 			buffer[j * 2 + 1] = signal;
 
 			n = j;
