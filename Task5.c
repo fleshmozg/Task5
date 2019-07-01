@@ -178,6 +178,15 @@ int16_t sweep_signal(int32_t samplerate, float start_freq, float end_freq, float
 	return (int16_t)(signal >> 15);
 }
 
+int16_t noise_signal(int32_t samplerate, float amplitude, int32_t lenght, int t)
+{
+	int32_t signal;
+
+	signal = FloatToFixed(amplitude * (((double)rand() / RAND_MAX) * 2.0 - 1.0));
+	return signal >> 15;
+
+}
+
 //HEADER
 typedef struct
 {
@@ -222,7 +231,7 @@ int main(int argc, char* argv[])
 	float time = 1;
 	float freq = 20;
 	float end_freq = 20000;
-	float amplitude = 0.5;
+	float amplitude = 1;
 	int32_t samplerate = 48000;
 	float Fc;
 	float Q;
@@ -282,7 +291,7 @@ int main(int argc, char* argv[])
 	{
 		for (int j = 0; j < BUFF_LEN; j++, t++)
 		{
-			signal = sweep_signal(samplerate, freq, end_freq, amplitude, lenght, t);
+			signal = noise_signal(samplerate, amplitude, lenght, t);
 
 			out = IIR(coeffs, sample_buffer, signal);
 			out_double = IIR_double(coeffs_double, sample_buffer_double, signal);
