@@ -211,7 +211,6 @@ int main(int argc, char* argv[])
 	float Q;
 	int32_t lenght = 0;
 	int16_t signal;
-
 	int opt;
 
 	while ((opt = getopt(argc, argv, "f:q:")) != -1)
