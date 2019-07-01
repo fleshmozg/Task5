@@ -93,7 +93,7 @@ int32_t FloatToFixed(double x)
 	return res;
 }
 
-void coeffscalc(int32_t* coeffs, float filterfreq, int32_t samplerate, float Q)
+void coeffscalc(int32_t* coeffs, double* coeffs_double, float filterfreq, int32_t samplerate, float Q)
 {
 	double a0, a1, a2, b1, b2, norm;
 
@@ -107,6 +107,12 @@ void coeffscalc(int32_t* coeffs, float filterfreq, int32_t samplerate, float Q)
 	b1 = 2 * (K2 - 1) * norm;
 	b2 = (1 - K / Q + K2) * norm;
 
+	coeffs_double[0] = a0;
+	coeffs_double[1] = a1;
+	coeffs_double[2] = a2;
+	coeffs_double[3] = b1;
+	coeffs_double[4] = b2;
+
 	coeffs[0] = FloatToFixed(a0);
 	coeffs[1] = FloatToFixed(a1);
 	coeffs[2] = FloatToFixed(a2);
@@ -118,8 +124,6 @@ int64_t accum = 0;
 
 int32_t IIR(int32_t* coeffs, int32_t* buffer, int16_t sample)
 {
-	// 0000 0000 0000 0000 . 000,0 0000 0000 0000 . 0000 0000 0000 0000 . 0000 0000 0000 0000
-	//int64_t acc = 0;
 	buffer[0] = buffer[1];
 	buffer[1] = buffer[2];
 	buffer[2] = (int32_t)sample;
@@ -140,6 +144,20 @@ int32_t IIR(int32_t* coeffs, int32_t* buffer, int16_t sample)
 	//		buffer[5] = (int32_t)(accum >> 30);
 	buffer[5] = (int32_t)(accum >> 30);
 	accum = accum & (int64_t)0x000000003fffffff;
+	return buffer[5];
+}
+
+double IIR_double(double* coeffs, double* buffer, int16_t sample)
+{
+	double acc = 0;
+	buffer[0] = buffer[1];
+	buffer[1] = buffer[2];
+	buffer[2] = (double)sample;
+	buffer[3] = buffer[4];
+	buffer[4] = buffer[5];
+
+	acc = buffer[2] * coeffs[0] + buffer[1] * coeffs[1] + buffer[0] * coeffs[2] - buffer[4] * coeffs[3] - buffer[3] * coeffs[4];
+	buffer[5] = acc;
 	return buffer[5];
 }
 
@@ -204,7 +222,7 @@ int main(int argc, char* argv[])
 	float time = 1;
 	float freq = 20;
 	float end_freq = 20000;
-	float amplitude = 1;
+	float amplitude = 0.5;
 	int32_t samplerate = 48000;
 	float Fc;
 	float Q;
@@ -249,14 +267,15 @@ int main(int argc, char* argv[])
 	fwrite(&header, sizeof(header), 1, file_out);
 
 	int32_t sample_buffer[6] = { 0, 0, 0, 0, 0, 0 };
-
 	int32_t coeffs[5] = { 0, 0, 0, 0, 0 };
+	double sample_buffer_double[6] = { 0, 0, 0, 0, 0, 0 };
+	double coeffs_double[5] = { 0, 0, 0, 0, 0 };
 
-	coeffscalc(coeffs, Fc, samplerate, Q);
+	coeffscalc(coeffs, coeffs_double, Fc, samplerate, Q);
 
 	int16_t buffer[BUFF_LEN * 2];
-
 	int16_t out;
+	double out_double;
 
 	int n;
 	for (int t = 0; t < lenght;)
@@ -266,9 +285,10 @@ int main(int argc, char* argv[])
 			signal = sweep_signal(samplerate, freq, end_freq, amplitude, lenght, t);
 
 			out = IIR(coeffs, sample_buffer, signal);
+			out_double = IIR_double(coeffs_double, sample_buffer_double, signal);
 
 			buffer[j * 2] = (int16_t)out;
-			buffer[j * 2 + 1] = signal;
+			buffer[j * 2 + 1] = (int16_t)out_double - (int16_t)out;
 
 			n = j;
 		}
