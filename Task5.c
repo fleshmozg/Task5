@@ -235,7 +235,7 @@ int main(int argc, char* argv[])
 	if (Q > 0.707)
 	{
 		Q = 0.707;
-		printf("Q can not be more than 0.707.\nQ value is set to 0.707.\n");
+		printf("Q can not be  than 0.707.\nQ value is set to 0.707.\n");
 	}
 
 	lenght = (int32_t)(time * samplerate);
@@ -265,8 +265,6 @@ int main(int argc, char* argv[])
 	{
 		for (int j = 0; j < BUFF_LEN; j++, t++)
 		{
-			if (t > 15471)
-				t = t;
 			signal = sweep_signal(samplerate, freq, end_freq, amplitude, lenght, t);
 
 			out = IIR(coeffs, sample_buffer, signal);
