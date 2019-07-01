@@ -11,9 +11,74 @@
 
 #define M_PI (3.14159265358979323846)
 
-#define FILTER_LEN (3)
 #define BUFF_LEN (1 << 7)
-#define FILTER_MASK (FILTER_LEN - 1)
+
+#define BADCH   (int)'?'
+#define BADARG  (int)':'
+
+// ARGUMENTS	-f		-q
+//				Fc		Q	
+
+
+int     opterr = 1,
+optind = 1,
+optopt,
+optreset;
+char    *optarg = NULL;
+
+
+int getopt(int nargc, char * const nargv[], const char *ostr)
+{
+	static char *place = "";
+	const char *oli;
+
+	if (optreset || !*place) {
+		optreset = 0;
+		if (optind >= nargc || *(place = nargv[optind]) != '-') {
+			place = "";
+			return (-1);
+		}
+		if (place[1] && *++place == '-') {
+			++optind;
+			place = "";
+			return (-1);
+		}
+	}
+	if ((optopt = (int)*place++) == (int)':' ||
+		!(oli = strchr(ostr, optopt))) {
+
+		if (optopt == (int)'-')
+			return (-1);
+		if (!*place)
+			++optind;
+		if (opterr && *ostr != ':')
+			(void)printf("illegal option -- %c\n", optopt);
+		return (BADCH);
+	}
+	if (*++oli != ':') {
+		optarg = NULL;
+		if (!*place)
+			++optind;
+	}
+	else {
+		if (*place)
+			optarg = place;
+		else if (nargc <= ++optind) {
+			place = "";
+			if (*ostr == ':')
+				return (BADARG);
+			if (opterr)
+				(void)printf("option requires an argument -- %c\n", optopt);
+			return (BADCH);
+		}
+		else
+			optarg = nargv[optind];
+		place = "";
+		++optind;
+	}
+	return (optopt);
+}
+
 
 int32_t FloatToFixed(double x)
 {
@@ -50,7 +115,6 @@ void coeffscalc(int32_t* coeffs, float filterfreq, int32_t samplerate, float Q)
 	coeffs[4] = FloatToFixed(b2);
 }
 
-
 int64_t accum = 0;
 
 int32_t IIR(int32_t* coeffs, int32_t* buffer, int16_t sample)
@@ -65,17 +129,17 @@ int32_t IIR(int32_t* coeffs, int32_t* buffer, int16_t sample)
 
 
 	accum += (int64_t)buffer[2] * coeffs[0] + (int64_t)buffer[1] * coeffs[1] + (int64_t)buffer[0] * coeffs[2] - (int64_t)buffer[4] * coeffs[3] - (int64_t)buffer[3] * coeffs[4];
-	if (accum > 0)
-		if ((accum & 0xffffe00000000000) != 0)
-			buffer[5] = 0x7f;
-		else
-			buffer[5] = (int32_t)(accum >> 30);
-	else if (accum < 0)
-		if ((~accum & 0xffffe00000000000) != 0)
-			buffer[5] = 0x80;
-		else
-			buffer[5] = (int32_t)(accum >> 30);
-	
+	//if (accum > 0)
+	//	if ((accum & 0xffffe00000000000) != 0)
+	//		buffer[5] = 0x7f;
+	//	else
+	//		buffer[5] = (int32_t)(accum >> 30);
+	//else if (accum < 0)
+	//	if ((~accum & 0xffffe00000000000) != 0)
+	//		buffer[5] = 0x80;
+	//	else
+	//		buffer[5] = (int32_t)(accum >> 30);
+	buffer[5] = (int32_t)(accum >> 30);
 	accum = accum & (int64_t)0x000000003fffffff;
 	return buffer[5];
 }
@@ -141,15 +205,38 @@ int main(int argc, char* argv[])
 	float time = 1;
 	float freq = 20;
 	float end_freq = 20000;
-	float amplitude = 0.5;
+	float amplitude = 1;
 	int32_t samplerate = 48000;
-	float Fc = 200;
-	float Q = 2;
+	float Fc;
+	float Q;
 	int32_t lenght = 0;
 	int16_t signal;
-	int8_t type;
+
+	int opt;
+
+	while ((opt = getopt(argc, argv, "f:q:")) != -1)
+	{
+		switch (opt)
+		{
+		case 'f':
+			Fc = atof(optarg);
+			break;
+		case 'q':
+			Q = atof(optarg);
+			break;
+		case ':':
+			printf("option needs a value\n");
+			break;
+		}
+	}
 
 	printf("start\n");
+
+	if (Q > 0.707)
+	{
+		Q = 0.707;
+		printf("Q can not be more than 0.707.\nQ value is set to 0.707.\n");
+	}
 
 	lenght = (int32_t)(time * samplerate);
 
@@ -168,8 +255,6 @@ int main(int argc, char* argv[])
 	int32_t coeffs[5] = { 0, 0, 0, 0, 0 };
 
 	coeffscalc(coeffs, Fc, samplerate, Q);
-
-
 
 	int16_t buffer[BUFF_LEN * 2];
 
