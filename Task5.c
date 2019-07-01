@@ -29,7 +29,7 @@ int32_t FloatToFixed(double x)
 	return res;
 }
 
-void coeffscalc(int32_t *coeffs, float filterfreq, int32_t samplerate, float Q)
+void coeffscalc(int32_t* coeffs, float filterfreq, int32_t samplerate, float Q)
 {
 	double a0, a1, a2, b1, b2, norm;
 
@@ -43,12 +43,6 @@ void coeffscalc(int32_t *coeffs, float filterfreq, int32_t samplerate, float Q)
 	b1 = 2 * (K2 - 1) * norm;
 	b2 = (1 - K / Q + K2) * norm;
 
-	//coeffs[0] = a0;
-	//coeffs[1] = a1;
-	//coeffs[2] = a2;
-	//coeffs[3] = b1;
-	//coeffs[4] = b2;
-
 	coeffs[0] = FloatToFixed(a0);
 	coeffs[1] = FloatToFixed(a1);
 	coeffs[2] = FloatToFixed(a2);
@@ -56,10 +50,13 @@ void coeffscalc(int32_t *coeffs, float filterfreq, int32_t samplerate, float Q)
 	coeffs[4] = FloatToFixed(b2);
 }
 
-int32_t IIR(int32_t* coeffs, int32_t *buffer, int16_t sample, int64_t err)
+
+int64_t accum = 0;
+
+int32_t IIR(int32_t* coeffs, int32_t* buffer, int16_t sample)
 {
 	// 0000 0000 0000 0000 . 000,0 0000 0000 0000 . 0000 0000 0000 0000 . 0000 0000 0000 0000
-	int64_t acc = err;
+	//int64_t acc = 0;
 	buffer[0] = buffer[1];
 	buffer[1] = buffer[2];
 	buffer[2] = (int32_t)sample;
@@ -67,9 +64,19 @@ int32_t IIR(int32_t* coeffs, int32_t *buffer, int16_t sample, int64_t err)
 	buffer[4] = buffer[5];
 
 
-	err = (int64_t)buffer[2] * coeffs[0] + (int64_t)buffer[1] * coeffs[1] + (int64_t)buffer[0] * coeffs[2] - (int64_t)buffer[4] * coeffs[3] - (int64_t)buffer[3] * coeffs[4];
-	buffer[5] = (int32_t)(err >> 30);
-	err &= (int64_t)0x000000003fffffff;
+	accum += (int64_t)buffer[2] * coeffs[0] + (int64_t)buffer[1] * coeffs[1] + (int64_t)buffer[0] * coeffs[2] - (int64_t)buffer[4] * coeffs[3] - (int64_t)buffer[3] * coeffs[4];
+	if (accum > 0)
+		if ((accum & 0xffffe00000000000) != 0)
+			buffer[5] = 0x7f;
+		else
+			buffer[5] = (int32_t)(accum >> 30);
+	else if (accum < 0)
+		if ((~accum & 0xffffe00000000000) != 0)
+			buffer[5] = 0x80;
+		else
+			buffer[5] = (int32_t)(accum >> 30);
+	
+	accum = accum & (int64_t)0x000000003fffffff;
 	return buffer[5];
 }
 
@@ -77,14 +84,14 @@ int16_t sweep_signal(int32_t samplerate, float start_freq, float end_freq, float
 {
 	int32_t signal;
 
-	float w1 = 2 * M_PI * start_freq;
-	float w2 = 2 * M_PI * end_freq;
-	float tmp1 = log(w2 / w1);
+	double w1 = 2 * M_PI * start_freq;
+	double w2 = 2 * M_PI * end_freq;
+	double tmp1 = log(w2 / w1);
 
-	float n;
-	float tmp2;
+	double n;
+	double tmp2;
 
-	n = (float)t / lenght;
+	n = (double)t / lenght;
 	tmp2 = exp(n * tmp1) - 1.0;
 	signal = FloatToFixed(amplitude * sin(w1 * lenght * tmp2 / (samplerate * tmp1)));
 	return (int16_t)(signal >> 15);
@@ -110,7 +117,7 @@ typedef struct
 	uint32_t        Subchunk2Size;
 } WavHeader;
 
-void InitHeader(WavHeader *header, int32_t lenght)
+void InitHeader(WavHeader* header, int32_t lenght)
 {
 	header->chunkID[0] = 'R'; header->chunkID[1] = 'I'; header->chunkID[2] = 'F'; header->chunkID[3] = 'F';
 	header->Format[0] = 'W'; header->Format[1] = 'A'; header->Format[2] = 'V'; header->Format[3] = 'E';
@@ -127,6 +134,8 @@ void InitHeader(WavHeader *header, int32_t lenght)
 	header->ChunkSize = 4 + (8 + header->Subchunk1Size) + (8 + header->Subchunk2Size);
 }
 
+
+
 int main(int argc, char* argv[])
 {
 	float time = 1;
@@ -135,7 +144,7 @@ int main(int argc, char* argv[])
 	float amplitude = 0.5;
 	int32_t samplerate = 48000;
 	float Fc = 200;
-	float Q = 0.707;
+	float Q = 2;
 	int32_t lenght = 0;
 	int16_t signal;
 	int8_t type;
@@ -146,7 +155,7 @@ int main(int argc, char* argv[])
 
 	WavHeader header;
 
-	FILE *file_out;
+	FILE* file_out;
 
 	InitHeader(&header, lenght);
 
@@ -156,11 +165,11 @@ int main(int argc, char* argv[])
 
 	int32_t sample_buffer[6] = { 0, 0, 0, 0, 0, 0 };
 
-	int32_t coeffs[5] = {0, 0, 0, 0, 0};
+	int32_t coeffs[5] = { 0, 0, 0, 0, 0 };
 
 	coeffscalc(coeffs, Fc, samplerate, Q);
 
-	int64_t acc = 0;
+
 
 	int16_t buffer[BUFF_LEN * 2];
 
@@ -171,17 +180,18 @@ int main(int argc, char* argv[])
 	{
 		for (int j = 0; j < BUFF_LEN; j++, t++)
 		{
-			
+			if (t > 15471)
+				t = t;
 			signal = sweep_signal(samplerate, freq, end_freq, amplitude, lenght, t);
 
-			out = IIR(coeffs, sample_buffer, signal, acc);
+			out = IIR(coeffs, sample_buffer, signal);
 
 			buffer[j * 2] = (int16_t)out;
 			buffer[j * 2 + 1] = signal;
 
 			n = j;
 		}
-		fwrite(buffer, 2 * n * sizeof(int16_t), 1, file_out);
+		fwrite(buffer, 2 * (n + 1) * sizeof(int16_t), 1, file_out);
 	}
 
 	fclose(file_out);
