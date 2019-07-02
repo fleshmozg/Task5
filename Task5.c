@@ -143,7 +143,7 @@ int32_t IIR(int32_t* coeffs, int32_t* buffer, int16_t sample)
 	//	else
 	//		buffer[5] = (int32_t)(accum >> 30);
 	buffer[5] = (int32_t)(accum >> 30);
-	accum = accum & (int64_t)0x000000003fffffff;
+	accum = accum & (int64_t)0x800000003fffffff;
 	return buffer[5];
 }
 
@@ -187,6 +187,16 @@ int16_t noise_signal(int32_t samplerate, float amplitude, int32_t lenght, int t)
 
 }
 
+int16_t tone_signal(int32_t samplerate, float frequency, float amplitude, int32_t lenght, int t)
+{
+	int32_t signal;
+
+	float w = 2 * M_PI * frequency;
+
+	signal = FloatToFixed(amplitude * sin(w * (float)t / samplerate));
+	return signal >> 15;
+}
+
 //HEADER
 typedef struct
 {
@@ -228,10 +238,10 @@ void InitHeader(WavHeader* header, int32_t lenght)
 
 int main(int argc, char* argv[])
 {
-	float time = 1;
+	float time = 3;
 	float freq = 20;
 	float end_freq = 20000;
-	float amplitude = 1;
+	float amplitude = 0.5;
 	int32_t samplerate = 48000;
 	float Fc;
 	float Q;
@@ -271,7 +281,7 @@ int main(int argc, char* argv[])
 
 	InitHeader(&header, lenght);
 
-	file_out = fopen("test_signal.wav", "wb");
+	file_out = fopen("test_signal_1.wav", "wb");
 
 	fwrite(&header, sizeof(header), 1, file_out);
 
@@ -291,6 +301,8 @@ int main(int argc, char* argv[])
 	{
 		for (int j = 0; j < BUFF_LEN; j++, t++)
 		{
+			//signal = sweep_signal(samplerate, freq, end_freq, amplitude, lenght, t);
+			//signal = tone_signal(samplerate, freq, amplitude, lenght, t);
 			signal = noise_signal(samplerate, amplitude, lenght, t);
 
 			out = IIR(coeffs, sample_buffer, signal);
