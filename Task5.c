@@ -120,7 +120,8 @@ void coeffscalc(int32_t* coeffs, double* coeffs_double, float filterfreq, int32_
 	coeffs[4] = FloatToFixed(b2);
 }
 
-int64_t accum = 0;
+uint32_t err = 0;
+int64_t acc = 0;
 
 int32_t IIR(int32_t* coeffs, int32_t* buffer, int16_t sample)
 {
@@ -130,20 +131,26 @@ int32_t IIR(int32_t* coeffs, int32_t* buffer, int16_t sample)
 	buffer[3] = buffer[4];
 	buffer[4] = buffer[5];
 
-
+	int64_t accum = err;
 	accum += (int64_t)buffer[2] * coeffs[0] + (int64_t)buffer[1] * coeffs[1] + (int64_t)buffer[0] * coeffs[2] - (int64_t)buffer[4] * coeffs[3] - (int64_t)buffer[3] * coeffs[4];
-	//if (accum > 0)
-	//	if ((accum & 0xffffe00000000000) != 0)
-	//		buffer[5] = 0x7f;
-	//	else
-	//		buffer[5] = (int32_t)(accum >> 30);
-	//else if (accum < 0)
-	//	if ((~accum & 0xffffe00000000000) != 0)
-	//		buffer[5] = 0x80;
-	//	else
-	//		buffer[5] = (int32_t)(accum >> 30);
+
 	buffer[5] = (int32_t)(accum >> 30);
-	accum = accum & (int64_t)0x800000003fffffff;
+	err = (uint32_t)accum & 0x3fffffff;
+	return buffer[5];
+}
+
+int32_t IIR2(int32_t* coeffs, int32_t* buffer, int16_t sample)
+{
+	buffer[0] = buffer[1];
+	buffer[1] = buffer[2];
+	buffer[2] = (int32_t)sample;
+	buffer[3] = buffer[4];
+	buffer[4] = buffer[5];
+
+	acc += (int64_t)buffer[2] * coeffs[0] + (int64_t)buffer[1] * coeffs[1] + (int64_t)buffer[0] * coeffs[2] - (int64_t)buffer[4] * coeffs[3] - (int64_t)buffer[3] * coeffs[4];
+
+	buffer[5] = (int32_t)(acc >> 30);
+	acc = acc & 0x3fffffff;
 	return buffer[5];
 }
 
@@ -286,6 +293,7 @@ int main(int argc, char* argv[])
 	fwrite(&header, sizeof(header), 1, file_out);
 
 	int32_t sample_buffer[6] = { 0, 0, 0, 0, 0, 0 };
+	int32_t sample_buffer2[6] = { 0, 0, 0, 0, 0, 0 };
 	int32_t coeffs[5] = { 0, 0, 0, 0, 0 };
 	double sample_buffer_double[6] = { 0, 0, 0, 0, 0, 0 };
 	double coeffs_double[5] = { 0, 0, 0, 0, 0 };
@@ -294,7 +302,10 @@ int main(int argc, char* argv[])
 
 	int16_t buffer[BUFF_LEN * 2];
 	int16_t out;
+	int16_t out2;
 	double out_double;
+
+	uint64_t error = 0;
 
 	int n;
 	for (int t = 0; t < lenght;)
@@ -306,15 +317,19 @@ int main(int argc, char* argv[])
 			signal = noise_signal(samplerate, amplitude, lenght, t);
 
 			out = IIR(coeffs, sample_buffer, signal);
+			out2 = IIR2(coeffs, sample_buffer2, signal);
 			out_double = IIR_double(coeffs_double, sample_buffer_double, signal);
 
-			buffer[j * 2] = (int16_t)out;
+			error += (unsigned)((int16_t)out_double - (int16_t)out) - (unsigned)((int16_t)out_double - (int16_t)out2);
+
+			buffer[j * 2] = (int16_t)out_double - (int16_t)out2;
 			buffer[j * 2 + 1] = (int16_t)out_double - (int16_t)out;
 
 			n = j;
 		}
 		fwrite(buffer, 2 * (n + 1) * sizeof(int16_t), 1, file_out);
 	}
+	printf("%u\n", error);
 
 	fclose(file_out);
 
